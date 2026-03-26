@@ -128,6 +128,17 @@ Estimated cost: ~$4–6 per 1,000 companies.
 
 Debug logs are written to `logs/leadgen_<timestamp>.log` on each run.
 
+## Disclaimer
+
+This tool is provided for **educational and research purposes only**. By using it, you acknowledge and agree to the following:
+
+- **Terms of Service** — Automated scraping may violate Allabolag.se's terms of service. It is your responsibility to review and comply with the terms of any website you scrape.
+- **GDPR** — This tool collects personal data (names, email addresses, phone numbers) of individuals at Swedish companies. Under the EU General Data Protection Regulation (GDPR), you must have a **lawful basis** (e.g. legitimate interest) for processing this data. You are solely responsible for ensuring your use complies with GDPR and any other applicable data protection laws.
+- **No spam** — The output of this tool is not intended for unsolicited mass outreach, spam, or any form of harassment.
+- **No warranty** — This software is provided "as is" without warranty of any kind. The authors are not liable for any legal consequences arising from its use.
+
+Use responsibly and at your own risk.
+
 ## Project Structure
 
 ```

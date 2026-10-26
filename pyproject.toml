@@ -1,0 +1,16 @@
+[project]
+name = "leadgen"
+version = "0.1.0"
+description = "Scrape Swedish companies from Allabolag.se by SNI code and enrich them with contact info"
+requires-python = ">=3.10"
+
+[tool.ruff]
+line-length = 120
+extend-exclude = ["venv"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

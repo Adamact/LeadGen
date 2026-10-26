@@ -2,7 +2,6 @@
 
 import csv
 import json
-from dataclasses import asdict
 from pathlib import Path
 
 from config import MAX_CONTACTS_COLUMNS

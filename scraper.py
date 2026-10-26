@@ -9,10 +9,9 @@ from playwright.async_api import async_playwright, Page
 from bs4 import BeautifulSoup
 from rich.console import Console
 
+import config
 from config import (
-    AI_ENABLED,
     ALLABOLAG_BASE_URL,
-    HEADLESS,
     REQUEST_DELAY,
     PAGE_LOAD_TIMEOUT,
 )
@@ -33,10 +32,10 @@ async def _random_delay():
 
 async def _launch_browser() -> tuple:
     """Launch a Playwright browser with stealth-ish settings."""
-    log.info("Launching Playwright Chromium (headless=%s)", HEADLESS)
+    log.info("Launching Playwright Chromium (headless=%s)", config.HEADLESS)
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(
-        headless=HEADLESS,
+        headless=config.HEADLESS,
         args=[
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -81,7 +80,7 @@ def _parse_with_ai(html: str, sni_code: str) -> list[Company]:
     try:
         raw = extract_companies_from_html(html, sni_code)
     except Exception as e:
-        log.error("AI parser failed: %s — falling back to regex parser", e, exc_info=True)
+        log.error("AI parser failed: %s", e, exc_info=True)
         return []
 
     companies = []
@@ -109,16 +108,47 @@ def _parse_with_ai(html: str, sni_code: str) -> list[Company]:
 
 
 def _parse_company_list(html: str, sni_code: str) -> list[Company]:
-    """Parse the segmentering page and extract companies."""
+    """
+    Parse the segmentering page and extract companies.
 
-    # Try AI parser first when enabled
-    if AI_ENABLED:
-        companies = _parse_with_ai(html, sni_code)
-        if companies:
-            return companies
-        log.warning("AI parser returned 0 results, falling back to regex parser")
-
+    The free HTML parser runs first; the AI parser (a Sonnet call per page) is only
+    used when the HTML parser finds nothing, e.g. after a site markup change.
+    """
     soup = BeautifulSoup(html, "lxml")
+    companies = _parse_with_regex(soup, sni_code)
+
+    if not companies and config.AI_ENABLED:
+        log.warning("HTML parser found 0 companies, trying AI parser")
+        companies = _parse_with_ai(html, sni_code)
+
+    if not companies:
+        log.warning("Primary parsers found 0 companies, trying fallback")
+        companies = _parse_fallback(soup, sni_code)
+
+    log.info("Parsed %d companies for SNI %s", len(companies), sni_code)
+    return companies
+
+
+def _card_text(link) -> str:
+    """Text of the search-result card containing a company link."""
+    node = prev = link
+    for _ in range(6):
+        if node.parent is None:
+            break
+        node = node.parent
+        classes = " ".join(node.get("class") or [])
+        if "ResultCard" in classes:
+            break
+        # Stop before climbing into a container that holds several companies
+        if len(node.select("a[href*='/foretag/']")) > 1:
+            node = prev
+            break
+        prev = node
+    return node.get_text(" ", strip=True)
+
+
+def _parse_with_regex(soup: BeautifulSoup, sni_code: str) -> list[Company]:
+    """Extract companies from the result cards' links and text."""
     companies = []
 
     # Segmentering links: /foretag/slug/-/ORG_NUMBER or /foretag/slug/city/category/HASH
@@ -169,21 +199,13 @@ def _parse_company_list(html: str, sni_code: str) -> list[Company]:
             if loc_part:
                 location = unquote(loc_part).replace("-", " ").title()
 
-        # Extract employees from nearby text
-        employees = ""
-        if link.parent:
-            block_text = link.parent.get_text(" ", strip=True)
-            emp_match = re.search(r"Anst.llda\s+(\d+)", block_text)
-            if emp_match:
-                employees = emp_match.group(1)
-
-        # Extract revenue from nearby text
-        revenue = ""
-        if link.parent:
-            block_text = link.parent.get_text(" ", strip=True)
-            rev_match = re.search(r"Oms.ttning\s+\d{4}\s+([\d\s]+)", block_text)
-            if rev_match:
-                revenue = rev_match.group(1).strip()
+        # Card text, e.g. "Acme AB Org.nr 556000-0000 503 38 Borås Omsättning 2025 33 070 Anställda 20 ..."
+        card = _card_text(link)
+        emp_match = re.search(r"Anst.llda\s+(\d+)", card)
+        employees = emp_match.group(1) if emp_match else ""
+        # Revenue is shown in thousand SEK
+        rev_match = re.search(r"Oms.ttning\s+\d{4}\s+(-?[\d\s]+?)\s*(?:Anst|Ordf|$)", card)
+        revenue = re.sub(r"\s", " ", rev_match.group(1)).strip() if rev_match else ""
 
         company = Company(
             name=name,
@@ -197,12 +219,6 @@ def _parse_company_list(html: str, sni_code: str) -> list[Company]:
         log.debug("Parsed: %s (org: %s, emp: %s, loc: %s)", name, org_number, employees, location)
         companies.append(company)
 
-    # Fallback if nothing found
-    if not companies:
-        log.warning("Primary parser found 0 companies, trying fallback")
-        companies = _parse_fallback(soup, sni_code)
-
-    log.info("Parsed %d companies for SNI %s", len(companies), sni_code)
     return companies
 
 

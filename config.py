@@ -10,6 +10,8 @@ PAGE_LOAD_TIMEOUT = 30_000  # ms
 # Search settings
 MAX_SEARCH_RESULTS_PER_COMPANY = 5
 ENRICHMENT_DELAY = (1, 3)  # Delay between enrichment searches
+SEARCH_RETRIES = 1         # retries per query when the search backend fails or is throttled
+SEARCH_BACKOFF = 8         # seconds before a retry (keep retries well inside ENRICHMENT_TIMEOUT)
 
 # Export
 DEFAULT_OUTPUT_FORMAT = "csv"
@@ -17,10 +19,13 @@ DEFAULT_OUTPUT_FILE = "leads.csv"
 
 # AI settings
 AI_ENABLED = True
-ANTHROPIC_MODEL = "claude-sonnet-4-20250514"
-ANTHROPIC_MODEL_LIGHT = "claude-haiku-4-5-20251001"  # cheaper model for simpler extraction tasks
-AI_MAX_TOKENS = 4096
-AI_WEBSITE_MAX_TOKENS = 2048  # for extract_contacts_from_website (richer output)
+ANTHROPIC_MODEL = "claude-sonnet-5-5"
+ANTHROPIC_MODEL_LIGHT = "claude-haiku-5-5"  # cheaper model for simpler extraction tasks
+AI_EFFORT = "low"  # extraction is simple; low effort keeps thinking tokens (and cost) down
+# Current models think before answering, so these caps cover thinking + the JSON reply
+AI_MAX_TOKENS = 16000
+AI_SEARCH_MAX_TOKENS = 4096   # for enrich_lead_from_search
+AI_WEBSITE_MAX_TOKENS = 8000  # for extract_contacts_from_website (richer output)
 
 # Website scraping
 WEBSITE_SCRAPE_TIMEOUT = 15  # seconds

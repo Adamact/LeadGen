@@ -10,7 +10,11 @@ Scrape Swedish companies from Allabolag.se by SNI code and enrich them with cont
 
 ## Setup
 
+Requires Python 3.10+.
+
 ```bash
+python -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
 ```
@@ -30,51 +34,51 @@ python main.py <sni_code> [options]
 ### Examples
 
 ```bash
-# Software companies (SNI 62010), default settings
-python main.py 62010
+# Software companies (SNI 62100), default settings
+python main.py 62100
 
 # Limit to 3 pages, custom output file
-python main.py 62010 --pages 3 --output leads.csv
+python main.py 62100 --pages 3 --output leads.csv
 
 # Export as JSON, skip enrichment
-python main.py 70220 --format json --no-enrich
+python main.py 70200 --format json --no-enrich
 
 # Fetch detail pages from Allabolag for extra data
-python main.py 62010 --details
+python main.py 62100 --details
 
 # One row per company instead of one row per contact
-python main.py 62010 --contact-format columns
+python main.py 62100 --contact-format columns
 
 # Only include high-confidence leads
-python main.py 62010 --min-confidence 0.5
+python main.py 62100 --min-confidence 0.5
 
 # Run without AI (regex fallback only, no API key needed)
-python main.py 62010 --no-ai
+python main.py 62100 --no-ai
 
 # Show browser window for debugging
-python main.py 62010 --no-headless
+python main.py 62100 --no-headless
 
 # Custom employee and revenue filters
-python main.py 62010 --employees-from 10 --employees-to 50 --revenue-from 5000000
+python main.py 62100 --employees-from 10 --employees-to 50 --revenue-from 5000
 
 # Bypass cache to re-fetch everything
-python main.py 62010 --no-cache
+python main.py 62100 --no-cache
 ```
 
 ### All Options
 
 | Flag | Default | Description |
 |------|---------|-------------|
-| `sni_code` | *(required)* | SNI code to search (e.g. `62010` for software development) |
+| `sni_code` | *(required)* | SNI code to search (e.g. `62100` for software development) |
 | `--pages`, `-p` | `5` | Max result pages to scrape |
 | `--output`, `-o` | `leads.csv` | Output file path |
 | `--format`, `-f` | `csv` | Output format: `csv` or `json` |
 | `--employees-from` | `20` | Minimum number of employees |
 | `--employees-to` | `150` | Maximum number of employees |
-| `--revenue-from` | `100` | Minimum revenue (SEK) |
-| `--revenue-to` | `302609000` | Maximum revenue (SEK) |
-| `--profit-from` | `100` | Minimum profit (SEK) |
-| `--profit-to` | `85733000` | Maximum profit (SEK) |
+| `--revenue-from` | `100` | Minimum revenue (thousand SEK) |
+| `--revenue-to` | `302609000` | Maximum revenue (thousand SEK) |
+| `--profit-from` | `100` | Minimum operating profit (thousand SEK) |
+| `--profit-to` | `85733000` | Maximum operating profit (thousand SEK) |
 | `--no-enrich` | — | Skip web enrichment (scrape Allabolag only) |
 | `--details`, `-d` | — | Fetch each company's Allabolag detail page (slower) |
 | `--no-ai` | — | Disable AI extraction (regex fallback, no API key needed) |
@@ -116,13 +120,23 @@ Enrichment results are cached locally in `.leadgen_cache/` for 30 days. Use `--n
 
 AI calls use a tiered model strategy to minimize API costs:
 
-- **Sonnet** for complex HTML parsing (company extraction from Allabolag)
-- **Haiku** for structured extraction (search enrichment, website contacts)
+- **Sonnet** (`claude-sonnet-5-5`) for complex HTML parsing (company extraction from Allabolag)
+- **Haiku** (`claude-haiku-5-5`) for structured extraction (search enrichment, website contacts)
 - **Keyword heuristic** for team page discovery (no API call)
 - **Smart skipping** — website scrape is skipped when search already yields a quality contact (personal email + mobile)
 - **Pre-filtering** — website text is trimmed to contact-relevant sections before sending to the API
 
-Estimated cost: ~$4–6 per 1,000 companies.
+Requests run at low effort (`AI_EFFORT` in `config.py`). Each run ends with a summary of API calls, tokens and estimated cost.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check .
+```
+
+CI runs both on every push and pull request.
 
 ## Logs
 
@@ -151,4 +165,5 @@ models.py        Data models (Company, Contact, Lead)
 config.py        Configuration constants
 cache.py         File-based enrichment cache
 logger.py        Logging setup
+tests/           Unit tests (no network or API calls)
 ```

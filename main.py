@@ -6,12 +6,12 @@ Usage:
     python main.py <sni_code> [options]
 
 Examples:
-    python main.py 62010                           # Software companies
-    python main.py 62010 --pages 3 --output leads.csv
-    python main.py 70220 --format json --no-enrich
-    python main.py 62010 --details                 # Also fetch detail pages
-    python main.py 62010 --contact-format columns  # One row per company
-    python main.py 62010 --min-confidence 0.5      # Only high-quality leads
+    python main.py 62100                           # Software companies
+    python main.py 62100 --pages 3 --output leads.csv
+    python main.py 70200 --format json --no-enrich
+    python main.py 62100 --details                 # Also fetch detail pages
+    python main.py 62100 --contact-format columns  # One row per company
+    python main.py 62100 --min-confidence 0.5      # Only high-quality leads
 """
 
 import argparse
@@ -62,11 +62,11 @@ def print_summary(leads: list[Lead]):
         console.print(f"  ... and {len(leads) - 50} more (see export file)")
 
     # Stats
-    total_contacts = sum(len(l.contacts) for l in leads)
-    with_phone = sum(1 for l in leads for c in l.contacts if c.phone)
-    with_email = sum(1 for l in leads for c in l.contacts if c.email)
-    mobile_phones = sum(1 for l in leads for c in l.contacts if c.phone_type == "mobile")
-    personal_emails = sum(1 for l in leads for c in l.contacts if c.email_type == "personal")
+    total_contacts = sum(len(lead.contacts) for lead in leads)
+    with_phone = sum(1 for lead in leads for c in lead.contacts if c.phone)
+    with_email = sum(1 for lead in leads for c in lead.contacts if c.email)
+    mobile_phones = sum(1 for lead in leads for c in lead.contacts if c.phone_type == "mobile")
+    personal_emails = sum(1 for lead in leads for c in lead.contacts if c.email_type == "personal")
 
     console.print(f"\n[bold]Stats:[/] {total_contacts} contacts across {len(leads)} companies")
     console.print(f"  Phones: {with_phone} ({mobile_phones} mobile)")
@@ -94,7 +94,11 @@ async def run(args: argparse.Namespace):
 
     if not companies:
         log.warning("No companies found for SNI %s — exiting", args.sni_code)
-        console.print("[red]No companies found. Check the SNI code and try again.[/]")
+        console.print(
+            "[red]No companies found. Check the SNI code and try again.[/]\n"
+            "  Allabolag uses SNI 2025 codes; many SNI 2007 codes were renumbered "
+            "(e.g. software development 62010 -> 62100)."
+        )
         sys.exit(1)
 
     log.info("Scrape complete: %d companies", len(companies))
@@ -141,7 +145,7 @@ async def run(args: argparse.Namespace):
     # API cost summary
     if args.enrich and args.ai:
         from ai import usage_tracker
-        console.print(f"\n[bold]API Usage:[/]")
+        console.print("\n[bold]API Usage:[/]")
         console.print(usage_tracker.summary())
 
     log.info("=== LeadGen run finished ===")
@@ -156,7 +160,7 @@ def main():
     )
     parser.add_argument(
         "sni_code",
-        help="SNI code to search (e.g., 62010 for software development)",
+        help="SNI code to search (e.g., 62100 for software development)",
     )
     parser.add_argument(
         "--pages", "-p",
@@ -191,25 +195,25 @@ def main():
         "--revenue-from",
         type=int,
         default=100,
-        help="Minimum revenue in SEK (default: 100)",
+        help="Minimum revenue in thousand SEK (default: 100)",
     )
     parser.add_argument(
         "--revenue-to",
         type=int,
         default=302_609_000,
-        help="Maximum revenue in SEK (default: 302609000)",
+        help="Maximum revenue in thousand SEK (default: 302609000)",
     )
     parser.add_argument(
         "--profit-from",
         type=int,
         default=100,
-        help="Minimum profit in SEK (default: 100)",
+        help="Minimum operating profit in thousand SEK (default: 100)",
     )
     parser.add_argument(
         "--profit-to",
         type=int,
         default=85_733_000,
-        help="Maximum profit in SEK (default: 85733000)",
+        help="Maximum operating profit in thousand SEK (default: 85733000)",
     )
     parser.add_argument(
         "--no-enrich",
@@ -292,7 +296,7 @@ def main():
                 "[yellow]Warning:[/] ANTHROPIC_API_KEY not set. "
                 "AI features will fail.\n"
                 "  Set it:  export ANTHROPIC_API_KEY=sk-ant-...\n"
-                "  Or run:  python main.py {sni_code} --no-ai\n"
+                f"  Or run:  python main.py {args.sni_code} --no-ai\n"
             )
 
     asyncio.run(run(args))

@@ -10,6 +10,8 @@ PAGE_LOAD_TIMEOUT = 30_000  # ms
 # Search settings
 MAX_SEARCH_RESULTS_PER_COMPANY = 5
 ENRICHMENT_DELAY = (1, 3)  # Delay between enrichment searches
+SEARCH_RETRIES = 1         # retries per query when the search backend fails or is throttled
+SEARCH_BACKOFF = 8         # seconds before a retry (keep retries well inside ENRICHMENT_TIMEOUT)
 
 # Export
 DEFAULT_OUTPUT_FORMAT = "csv"

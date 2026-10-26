@@ -41,7 +41,7 @@ python main.py 62100
 python main.py 62100 --pages 3 --output leads.csv
 
 # Export as JSON, skip enrichment
-python main.py 70220 --format json --no-enrich
+python main.py 70200 --format json --no-enrich
 
 # Fetch detail pages from Allabolag for extra data
 python main.py 62100 --details

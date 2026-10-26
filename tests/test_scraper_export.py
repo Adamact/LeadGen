@@ -1,3 +1,5 @@
+import pytest
+
 import config
 import scraper
 from export import export_leads, load_existing_org_numbers
@@ -47,3 +49,32 @@ def test_min_confidence_filters_contacts(tmp_path):
                  str(out), fmt="json", min_confidence=0.5)
     assert load_existing_org_numbers(str(out), "json") == {"1"}
     assert '"B"' not in out.read_text(encoding="utf-8")
+
+
+CARD_HTML = """
+<div class="results">
+  <div class="SegmentationSearchResultCard-card"><div><h2><a href="/foretag/acme-ab/bor%C3%A5s/-/5591631279">Acme AB</a></h2>
+    <span>Org.nr 559163-1279</span> <span>503 38 Borås</span> <span>Omsättning 2025</span> <span>33&nbsp;070</span>
+    <span>Anställda</span> <span>20</span> <span>Ordförande Anna Svensson</span></div></div>
+  <div class="SegmentationSearchResultCard-card"><div><h2><a href="/foretag/beta-ab/stockholm/-/5566467568">Beta AB</a></h2>
+    <span>Omsättning 2026</span> <span>1 048 802</span> <span>Anställda</span> <span>25</span></div></div>
+</div>
+"""
+
+
+def test_html_parser_reads_result_cards_without_ai(monkeypatch):
+    monkeypatch.setattr(config, "AI_ENABLED", True)
+    monkeypatch.setattr(scraper, "_parse_with_ai", lambda *a: pytest.fail("AI parser should not run"))
+    companies = scraper._parse_company_list(CARD_HTML, "62100")
+    assert [(c.name, c.location, c.employees, c.revenue) for c in companies] == [
+        ("Acme AB", "Borås", "20", "33 070"),
+        ("Beta AB", "Stockholm", "25", "1 048 802"),
+    ]
+
+
+def test_ai_parser_is_fallback_when_html_parser_finds_nothing(monkeypatch):
+    monkeypatch.setattr(config, "AI_ENABLED", True)
+    called = []
+    monkeypatch.setattr(scraper, "_parse_with_ai", lambda *a: called.append(a) or [])
+    scraper._parse_company_list("<html><body>nothing here</body></html>", "62100")
+    assert called

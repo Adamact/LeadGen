@@ -81,3 +81,35 @@ def test_cli_toggles_are_read_at_runtime(monkeypatch):
     assert not called
     assert info["website"] == "https://acme.se/"
     assert info["contacts"][0].phone == "070-123 45 67"
+
+
+def test_skip_domains_match_whole_domains():
+    assert enricher._is_skip_domain("https://www.infobel.com/sv/sweden/x")
+    assert enricher._is_skip_domain("https://se.linkedin.com/company/acme")
+    assert not enricher._is_skip_domain("https://www.duc.se/")  # not uc.se
+    assert not enricher._is_skip_domain("https://acme.se/")
+
+
+def test_search_retries_after_throttling(monkeypatch):
+    monkeypatch.setattr(enricher.time, "sleep", lambda s: None)
+    calls = []
+
+    class FakeDDGS:
+        def text(self, query, **kw):
+            calls.append(query)
+            if len(calls) == 1:
+                raise enricher.DDGSException("No results found.")
+            return [{"href": "https://acme.se/"}]
+
+    assert enricher._search(FakeDDGS(), "q") == [{"href": "https://acme.se/"}]
+    assert len(calls) == 2
+
+
+def test_search_gives_up_quietly(monkeypatch):
+    monkeypatch.setattr(enricher.time, "sleep", lambda s: None)
+
+    class FailingDDGS:
+        def text(self, query, **kw):
+            raise enricher.DDGSException("No results found.")
+
+    assert enricher._search(FailingDDGS(), "q") == []

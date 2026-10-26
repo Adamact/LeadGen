@@ -7,11 +7,20 @@ import time
 from difflib import SequenceMatcher
 
 from ddgs import DDGS
+from ddgs.exceptions import DDGSException
 from rich.console import Console
+from rich.markup import escape
 
 # Runtime toggles (AI_ENABLED, CACHE_ENABLED, ENRICHMENT_TIMEOUT) are read via `config.` because main.py sets them from CLI flags
 import config
-from config import MAX_SEARCH_RESULTS_PER_COMPANY, ENRICHMENT_DELAY, SKIP_IF_NO_WEBSITE, SKIP_WEBSITE_IF_GOOD_SEARCH
+from config import (
+    ENRICHMENT_DELAY,
+    MAX_SEARCH_RESULTS_PER_COMPANY,
+    SEARCH_BACKOFF,
+    SEARCH_RETRIES,
+    SKIP_IF_NO_WEBSITE,
+    SKIP_WEBSITE_IF_GOOD_SEARCH,
+)
 from models import Company, Contact, Lead
 from logger import log
 
@@ -46,10 +55,25 @@ SKIP_DOMAINS = {
     "solidinfo.se", "bisnode.se", "infotorg.se", "bolagsverket.se",
     "largestcompanies.se", "europages.com", "kompass.com",
     "dnb.com", "vainu.com", "leadfeeder.com",
+    "infobel.com", "cylex.se", "gulex.se", "118100.se", "bizzdo.se",
+    "uc.se", "syna.se", "northdata.com", "northdata.de", "opencorporates.com",
+    # B2B data / people-search sites
+    "crunchbase.com", "zoominfo.com", "rocketreach.co", "apollo.io", "lusha.com",
     # Generic directories / review sites
     "wikipedia.org", "trustpilot.com", "glassdoor.com",
     "indeed.com", "monster.se", "jobba.se",
 }
+
+
+def _domain(url: str) -> str:
+    """Return the lowercase host of a URL without a leading www."""
+    return re.sub(r"https?://(www\.)?", "", url).split("/")[0].split(":")[0].lower()
+
+
+def _is_skip_domain(url: str) -> bool:
+    """True if the URL is on a directory/social domain (or a subdomain of one)."""
+    domain = _domain(url)
+    return any(domain == sd or domain.endswith("." + sd) for sd in SKIP_DOMAINS)
 
 
 # ---------------------------------------------------------------------------
@@ -209,34 +233,39 @@ def _gather_search_results(company: Company) -> list[dict]:
 
     with DDGS() as ddgs:
         for query in queries:
-            log.debug("DuckDuckGo query: %s", query)
-            try:
-                results = list(ddgs.text(
-                    query,
-                    region="se-sv",
-                    max_results=MAX_SEARCH_RESULTS_PER_COMPANY,
-                ))
-                log.debug("Query returned %d results", len(results))
-                all_results.extend(results)
-            except Exception as e:
-                log.warning("Search failed for query '%s': %s", query, e, exc_info=True)
-                console.print(f"    [red]Search error: {e}[/]")
-                continue
-
-            delay = random.uniform(*ENRICHMENT_DELAY)
-            time.sleep(delay)
+            all_results.extend(_search(ddgs, query))
+            time.sleep(random.uniform(*ENRICHMENT_DELAY))
 
     return all_results
+
+
+def _search(ddgs: DDGS, query: str) -> list[dict]:
+    """
+    Run one search, backing off and retrying when the backend fails.
+
+    When throttled, ddgs often reports "No results found" for queries that do have
+    results, so empty/failed searches are retried after a pause before giving up.
+    """
+    for attempt in range(SEARCH_RETRIES + 1):
+        log.debug("DuckDuckGo query (attempt %d): %s", attempt + 1, query)
+        try:
+            results = list(ddgs.text(query, region="se-sv", max_results=MAX_SEARCH_RESULTS_PER_COMPANY))
+            log.debug("Query returned %d results", len(results))
+            return results
+        except DDGSException as e:
+            log.debug("Search failed for query '%s': %s", query, e, exc_info=True)
+            if attempt < SEARCH_RETRIES:
+                time.sleep(SEARCH_BACKOFF * (attempt + 1))
+            else:
+                log.info("Giving up on query '%s' after %d attempts: %s", query, attempt + 1, e)
+    return []
 
 
 def _find_website(search_results: list[dict]) -> str:
     """Extract the company's own website URL from search results."""
     for r in search_results:
         url = r.get("href", "")
-        if not url:
-            continue
-        domain = re.sub(r"https?://(www\.)?", "", url).split("/")[0].lower()
-        if not any(sd in domain for sd in SKIP_DOMAINS):
+        if url and not _is_skip_domain(url):
             return url
     return ""
 
@@ -271,23 +300,12 @@ def _enrich_with_regex(company: Company, search_results: list[dict]) -> dict:
         "contacts": [],
     }
 
-    all_text = ""
-    found_urls = []
-
-    for r in search_results:
-        title = r.get("title", "")
-        body = r.get("body", "")
-        href = r.get("href", "")
-        snippet = f"{title} {body} {href}"
-        all_text += f" {snippet}"
-        found_urls.append(href)
+    all_text = " ".join(
+        f"{r.get('title', '')} {r.get('body', '')} {r.get('href', '')}" for r in search_results
+    )
 
     # Extract website — only the company's own domain
-    for url in found_urls:
-        domain = re.sub(r"https?://(www\.)?", "", url).split("/")[0].lower()
-        if not any(sd in domain for sd in SKIP_DOMAINS):
-            info["website"] = url
-            break
+    info["website"] = _find_website(search_results)
 
     # Extract a generic contact from regex matches
     emails = _extract_emails(all_text)
@@ -323,8 +341,7 @@ def _enrich_with_regex(company: Company, search_results: list[dict]) -> dict:
 
 def _is_company_website(url: str) -> bool:
     """Check that a URL is the company's own website, not a directory or database."""
-    domain = re.sub(r"https?://(www\.)?", "", url).split("/")[0].lower()
-    return not any(sd in domain for sd in SKIP_DOMAINS)
+    return not _is_skip_domain(url)
 
 
 def _scrape_company_website(company: Company, website_url: str) -> dict:
@@ -552,10 +569,13 @@ async def enrich_companies(
         contact_count = len(lead.contacts)
         best = lead.contacts[0] if lead.contacts else None
         if best:
+            who = " ".join(filter(None, [best.name, f"({best.title})" if best.title else ""]))
+            who = who or best.email or best.phone or "unnamed"
+            # escape(): rich would otherwise treat "[...]" in names or the score as markup
             console.print(
                 f"    Found [green]{contact_count}[/] contact(s) — "
-                f"best: {best.name} ({best.title}) "
-                f"[confidence: {best.confidence:.2f}]"
+                f"best: {escape(who)} "
+                f"{escape(f'[confidence: {best.confidence:.2f}]')}"
             )
         else:
             console.print("    Found [yellow]0[/] contacts")

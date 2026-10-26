@@ -8,7 +8,7 @@ Usage:
 Examples:
     python main.py 62100                           # Software companies
     python main.py 62100 --pages 3 --output leads.csv
-    python main.py 70220 --format json --no-enrich
+    python main.py 70200 --format json --no-enrich
     python main.py 62100 --details                 # Also fetch detail pages
     python main.py 62100 --contact-format columns  # One row per company
     python main.py 62100 --min-confidence 0.5      # Only high-quality leads

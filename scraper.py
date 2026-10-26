@@ -9,10 +9,9 @@ from playwright.async_api import async_playwright, Page
 from bs4 import BeautifulSoup
 from rich.console import Console
 
+import config
 from config import (
-    AI_ENABLED,
     ALLABOLAG_BASE_URL,
-    HEADLESS,
     REQUEST_DELAY,
     PAGE_LOAD_TIMEOUT,
 )
@@ -33,10 +32,10 @@ async def _random_delay():
 
 async def _launch_browser() -> tuple:
     """Launch a Playwright browser with stealth-ish settings."""
-    log.info("Launching Playwright Chromium (headless=%s)", HEADLESS)
+    log.info("Launching Playwright Chromium (headless=%s)", config.HEADLESS)
     pw = await async_playwright().start()
     browser = await pw.chromium.launch(
-        headless=HEADLESS,
+        headless=config.HEADLESS,
         args=[
             "--disable-blink-features=AutomationControlled",
             "--no-sandbox",
@@ -112,7 +111,7 @@ def _parse_company_list(html: str, sni_code: str) -> list[Company]:
     """Parse the segmentering page and extract companies."""
 
     # Try AI parser first when enabled
-    if AI_ENABLED:
+    if config.AI_ENABLED:
         companies = _parse_with_ai(html, sni_code)
         if companies:
             return companies

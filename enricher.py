@@ -9,7 +9,9 @@ from difflib import SequenceMatcher
 from ddgs import DDGS
 from rich.console import Console
 
-from config import AI_ENABLED, CACHE_ENABLED, MAX_SEARCH_RESULTS_PER_COMPANY, ENRICHMENT_DELAY, ENRICHMENT_TIMEOUT, SKIP_IF_NO_WEBSITE, SKIP_WEBSITE_IF_GOOD_SEARCH
+# Runtime toggles (AI_ENABLED, CACHE_ENABLED, ENRICHMENT_TIMEOUT) are read via `config.` because main.py sets them from CLI flags
+import config
+from config import MAX_SEARCH_RESULTS_PER_COMPANY, ENRICHMENT_DELAY, SKIP_IF_NO_WEBSITE, SKIP_WEBSITE_IF_GOOD_SEARCH
 from models import Company, Contact, Lead
 from logger import log
 
@@ -376,18 +378,15 @@ def _try_infer_emails(contacts: list[Contact], known_emails: list[str]) -> list[
         return contacts
 
     for contact in contacts:
-        if contact.email and _is_personal_email(contact.email):
-            continue  # already has a personal email
-        if not contact.name:
-            continue
+        if contact.email or not contact.name:
+            continue  # never overwrite or relabel an email we actually found
 
         candidates = infer_personal_email(contact.name, domain)
         if candidates:
             # Use the most common pattern as a guess
-            contact.email = contact.email or candidates[0]
+            contact.email = candidates[0]
             contact.email_type = "personal"
-            if contact.source != "inferred":
-                contact.source = contact.source or "inferred"
+            contact.source = contact.source or "inferred"
             log.info("Inferred email for %s: %s", contact.name, candidates[0])
 
     return contacts
@@ -400,12 +399,12 @@ def _try_infer_emails(contacts: list[Contact], known_emails: list[str]) -> list[
 def _search_and_enrich(company: Company) -> dict:
     """Search the web, find website, scrape it, and extract all contacts."""
     # Check cache first
-    if CACHE_ENABLED and company.org_number:
+    if config.CACHE_ENABLED and company.org_number:
         from cache import get_cached
         cached = get_cached(company.org_number, "enrichment")
         if cached is not None:
             log.info("Using cached enrichment for '%s'", company.name)
-            console.print(f"    [dim]Using cached result[/]")
+            console.print("    [dim]Using cached result[/]")
             # Reconstruct Contact objects from cached dicts
             contacts = []
             for c in cached.get("contacts", []):
@@ -423,7 +422,7 @@ def _search_and_enrich(company: Company) -> dict:
         return {}
 
     # Step 1: Get contacts from search results (AI or regex)
-    if AI_ENABLED:
+    if config.AI_ENABLED:
         info = _enrich_with_ai(company, search_results)
         if not info or not info.get("contacts"):
             info = _enrich_with_regex(company, search_results)
@@ -446,7 +445,7 @@ def _search_and_enrich(company: Company) -> dict:
     # Skip deep enrichment if no real website found
     if not website and SKIP_IF_NO_WEBSITE:
         log.info("No company website for '%s', skipping deep enrichment", company.name)
-        console.print(f"    [yellow]No website found — skipping deep enrichment[/]")
+        console.print("    [yellow]No website found — skipping deep enrichment[/]")
         # Still score whatever we got from search
         for contact in all_contacts:
             contact.confidence = compute_confidence(contact)
@@ -461,11 +460,11 @@ def _search_and_enrich(company: Company) -> dict:
     )
     if has_quality_contact:
         log.info("Search already found quality contact for '%s', skipping website scrape", company.name)
-        console.print(f"    [green]Good contact from search — skipping website scrape[/]")
+        console.print("    [green]Good contact from search — skipping website scrape[/]")
 
     # Step 3: Scrape the actual website for contacts (AI-only feature)
     all_emails = []
-    if AI_ENABLED and website and not has_quality_contact:
+    if config.AI_ENABLED and website and not has_quality_contact:
         site_data = _scrape_company_website(company, website)
 
         if site_data.get("contacts"):
@@ -489,7 +488,7 @@ def _search_and_enrich(company: Company) -> dict:
                 contact.phone_type = python_class
 
     # Step 6: Try to infer personal emails for contacts missing them
-    if AI_ENABLED and all_emails:
+    if config.AI_ENABLED and all_emails:
         merged = _try_infer_emails(merged, all_emails)
 
     # Step 7: Compute confidence scores
@@ -502,7 +501,7 @@ def _search_and_enrich(company: Company) -> dict:
     info["contacts"] = merged
 
     # Cache the result
-    if CACHE_ENABLED and company.org_number:
+    if config.CACHE_ENABLED and company.org_number:
         from cache import set_cached
         cache_data = dict(info)
         cache_data["contacts"] = [c.to_dict() for c in merged]
@@ -521,7 +520,7 @@ async def enrich_companies(
     leads: list[Lead] = []
     total = len(companies)
 
-    mode = "AI + web search" if AI_ENABLED else "web search (regex)"
+    mode = "AI + web search" if config.AI_ENABLED else "web search (regex)"
     console.print(f"\n[bold blue]Enriching {total} companies via {mode}...[/]")
 
     for i, company in enumerate(companies):
@@ -530,11 +529,11 @@ async def enrich_companies(
         try:
             info = await asyncio.wait_for(
                 asyncio.to_thread(_search_and_enrich, company),
-                timeout=ENRICHMENT_TIMEOUT,
+                timeout=config.ENRICHMENT_TIMEOUT,
             )
         except asyncio.TimeoutError:
-            log.warning("Enrichment timed out for '%s' after %ds", company.name, ENRICHMENT_TIMEOUT)
-            console.print(f"    [yellow]Skipped (timeout after {ENRICHMENT_TIMEOUT}s)[/]")
+            log.warning("Enrichment timed out for '%s' after %ds", company.name, config.ENRICHMENT_TIMEOUT)
+            console.print(f"    [yellow]Skipped (timeout after {config.ENRICHMENT_TIMEOUT}s)[/]")
             info = {}
         except Exception as e:
             log.error("Enrichment failed for '%s': %s", company.name, e, exc_info=True)
@@ -559,7 +558,7 @@ async def enrich_companies(
                 f"[confidence: {best.confidence:.2f}]"
             )
         else:
-            console.print(f"    Found [yellow]0[/] contacts")
+            console.print("    Found [yellow]0[/] contacts")
 
         leads.append(lead)
 

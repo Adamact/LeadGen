@@ -10,7 +10,11 @@ Scrape Swedish companies from Allabolag.se by SNI code and enrich them with cont
 
 ## Setup
 
+Requires Python 3.10+.
+
 ```bash
+python -m venv venv
+source venv/bin/activate      # Windows: venv\Scripts\activate
 pip install -r requirements.txt
 playwright install chromium
 ```
@@ -116,13 +120,23 @@ Enrichment results are cached locally in `.leadgen_cache/` for 30 days. Use `--n
 
 AI calls use a tiered model strategy to minimize API costs:
 
-- **Sonnet** for complex HTML parsing (company extraction from Allabolag)
-- **Haiku** for structured extraction (search enrichment, website contacts)
+- **Sonnet** (`claude-sonnet-5-5`) for complex HTML parsing (company extraction from Allabolag)
+- **Haiku** (`claude-haiku-5-5`) for structured extraction (search enrichment, website contacts)
 - **Keyword heuristic** for team page discovery (no API call)
 - **Smart skipping** — website scrape is skipped when search already yields a quality contact (personal email + mobile)
 - **Pre-filtering** — website text is trimmed to contact-relevant sections before sending to the API
 
-Estimated cost: ~$4–6 per 1,000 companies.
+Requests run at low effort (`AI_EFFORT` in `config.py`). Each run ends with a summary of API calls, tokens and estimated cost.
+
+## Development
+
+```bash
+pip install -r requirements-dev.txt
+pytest
+ruff check .
+```
+
+CI runs both on every push and pull request.
 
 ## Logs
 
@@ -151,4 +165,5 @@ models.py        Data models (Company, Contact, Lead)
 config.py        Configuration constants
 cache.py         File-based enrichment cache
 logger.py        Logging setup
+tests/           Unit tests (no network or API calls)
 ```

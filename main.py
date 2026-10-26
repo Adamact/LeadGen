@@ -62,11 +62,11 @@ def print_summary(leads: list[Lead]):
         console.print(f"  ... and {len(leads) - 50} more (see export file)")
 
     # Stats
-    total_contacts = sum(len(l.contacts) for l in leads)
-    with_phone = sum(1 for l in leads for c in l.contacts if c.phone)
-    with_email = sum(1 for l in leads for c in l.contacts if c.email)
-    mobile_phones = sum(1 for l in leads for c in l.contacts if c.phone_type == "mobile")
-    personal_emails = sum(1 for l in leads for c in l.contacts if c.email_type == "personal")
+    total_contacts = sum(len(lead.contacts) for lead in leads)
+    with_phone = sum(1 for lead in leads for c in lead.contacts if c.phone)
+    with_email = sum(1 for lead in leads for c in lead.contacts if c.email)
+    mobile_phones = sum(1 for lead in leads for c in lead.contacts if c.phone_type == "mobile")
+    personal_emails = sum(1 for lead in leads for c in lead.contacts if c.email_type == "personal")
 
     console.print(f"\n[bold]Stats:[/] {total_contacts} contacts across {len(leads)} companies")
     console.print(f"  Phones: {with_phone} ({mobile_phones} mobile)")
@@ -141,7 +141,7 @@ async def run(args: argparse.Namespace):
     # API cost summary
     if args.enrich and args.ai:
         from ai import usage_tracker
-        console.print(f"\n[bold]API Usage:[/]")
+        console.print("\n[bold]API Usage:[/]")
         console.print(usage_tracker.summary())
 
     log.info("=== LeadGen run finished ===")
@@ -292,7 +292,7 @@ def main():
                 "[yellow]Warning:[/] ANTHROPIC_API_KEY not set. "
                 "AI features will fail.\n"
                 "  Set it:  export ANTHROPIC_API_KEY=sk-ant-...\n"
-                "  Or run:  python main.py {sni_code} --no-ai\n"
+                f"  Or run:  python main.py {args.sni_code} --no-ai\n"
             )
 
     asyncio.run(run(args))
